@@ -1,0 +1,178 @@
+from django.db import transaction
+from django.shortcuts import render
+from django.http import JsonResponse, HttpResponse
+from car.models import Book,Car
+from user import models
+from user.models import TBook,TCar,TUser
+
+
+# Create your views here.
+def car(request):
+    txtUsername = request.session.get('txtUsername')
+    #登录
+    if txtUsername:
+    # 外面有车
+        user = TUser.objects.get(user_name=txtUsername)
+        car = request.session.get('car')
+
+        if request.session.get('car'):
+    # 用户账号里有车
+            res = TCar.objects.filter(id=user.user_id)
+
+            if res:
+                for book in car.book_list:
+                    flag = False
+                    for user_book in res:
+                        if int(book.id) == user_book.book_id:
+                            try:
+                                with transaction.atomic():
+                                    user_book.goods_number = int(user_book.goods_number) + int(book.count)
+                                    user_book.save()
+                                    flag = True
+                            except:
+                                print('update error')
+                    if not flag:
+                        try:
+                            with transaction.atomic():
+                                TCar.objects.create(book_id=book.id, goods_number=book.count, id=user)
+                        except:
+                            print('insert1 error')
+
+                res = models.TBook.objects.none()
+                book = TBook.objects.filter(tcar__id=user)
+                user_car = TCar.objects.filter(id=user)
+
+                sum_price = 0
+                sum_count = 0
+
+                for user_simple_book in user_car:
+                    book_price = TBook.objects.get(book_id=user_simple_book.book_id).dangdang_price
+                    sum_price += book_price * int(user_simple_book.goods_number)
+                    sum_count += int(user_simple_book.goods_number)
+
+                for simple_book in book:
+                    res |= TBook.objects.filter(book_id=simple_book.book_id)
+
+                content = {
+                    'txtUsername': txtUsername,
+                    'res': res,
+                    'user_car': user_car,
+                    'sum_price':sum_price,
+                    'sum_count':sum_count,
+                }
+
+                return render(request, 'dangdang/car.html', content)
+    # 已登录
+    # 外面有车
+    # 用户无车
+            else:
+
+                for book in car.book_list:
+                    try:
+                        with transaction.atomic():
+                            TCar.objects.create(book_id=book.id,goods_number=book.count,id=user)
+                    except:
+                        print('insert2 error')
+                res = models.TBook.objects.none()
+                book = TBook.objects.filter(tcar__id=user)
+                user_car = TCar.objects.filter(id=user)
+
+                sum_price = 0
+                sum_count = 0
+
+                for user_simple_book in user_car:
+                    book_price = TBook.objects.get(book_id=user_simple_book.book_id).dangdang_price
+                    sum_price += book_price * int(user_simple_book.goods_number)
+                    sum_count += int(user_simple_book.goods_number)
+
+                for simple_book in book:
+                    res |= TBook.objects.filter(book_id=simple_book.book_id)
+
+                content = {
+                    'txtUsername': txtUsername,
+                    'res': res,
+                    'user_car': user_car,
+                    'sum_price': sum_price,
+                    'sum_count': sum_count,
+                }
+                return render(request, 'dangdang/car.html', content)
+
+    #未登录 外面有车
+    elif request.session.get('car'):
+        car = request.session.get('car')
+        sum_price = 0
+        sum_count = 0
+        for i in car.book_list:
+            sum_price += i.price * i.count
+            sum_count += i.count
+
+        return render(request, 'dangdang/car.html', {'car': car, 'sum_price': sum_price,'sum_count':sum_count})
+    #未登录 外面无车
+    else:
+        return render(request, 'dangdang/car.html',{'txtUsername' : txtUsername })
+
+
+def add_car(request):
+    book_id = request.POST.get('book_id')
+    book_count = int(request.POST.get('book_count'))
+    print('add_car',book_count)
+    print('add_car',book_id)
+    txtUsername = request.session.get('txtUsername')
+    # 字典方式存储book
+    # book_list= []
+    # book_list.append({"id":book_id})
+    # request.session['car'] = book_list
+
+
+    if txtUsername:
+        user = TUser.objects.get(user_name=txtUsername)
+        try:
+            with transaction.atomic():
+                ll = TCar.objects.create(book_id=book_id, goods_number=book_count, id=user)
+        except:
+            print('登录状态下添加商品 error')
+
+    # 面向对象方式存储book
+    else:
+        car = request.session.get('car')
+
+        if car:
+            car.add(book_id,book_count)
+            request.session['car'] = car
+            for res in car.book_list:
+                print(res.id, res.name, res.count, res.price, res.picture)
+        else:
+            car = Car()
+            car.add(book_id,book_count)
+            request.session['car'] = car
+            for res in car.book_list:
+                print(res.id, res.name, res.count, res.price, res.picture)
+    return HttpResponse('添加成功')
+
+
+def remove_car(request):
+    book_name = request.POST.get('book_name')
+    car = request.session.get('car')
+    for i in car.book_list:
+        if i.name == book_name:
+            car.remove_book(i.id)
+            request.session['car'] =car
+            for i in car.book_list:
+                print(i.name)
+            return HttpResponse('删除成功')
+
+def all_remove(request):
+    car = request.session.get('car')
+    print(car)
+    car.clear()
+    request.session.flush()
+    print(request.session.get('car'))
+    return HttpResponse('删除成功')
+
+
+def indent(request):
+    txtUsername = request.session.get('txtUsername')
+    if txtUsername:
+        print(txtUsername)
+        return render(request, 'dangdang/indent.html',{'txtUsername':txtUsername})
+    return render(request,'dangdang/indent.html')
